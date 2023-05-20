@@ -12,13 +12,13 @@ TOKEN = "t.WCWdn68CBp2eKsjA9IQK0IXZS2_Ws-wKYTYpVU1AGIeKMEfXzO7W7JJ9895kTLOL1AP7k
 
 API_ID = 11765528
 API_HASH = '7f2e6a3543a3f70a00797af94d46956c'
-SOURCE_PUBLICS = ['kentblablabla']
+SOURCE_PUBLICS = ['kentblablabla', 'cashflowresend']
 PHONE_NUMBER = '+79188653411'
 app = tgClient("nikkk", api_id=API_ID, api_hash=API_HASH, phone_number=PHONE_NUMBER)
 
 BALANCE = 0
 BALANCE_FREE = 0
-LOT_PROPORTION = 0.05
+LOT_PROPORTION = 0.1
 
 SHARES = []
 ACC_ID = ''
@@ -75,7 +75,8 @@ class Share:
         return True
 
     def print(self):
-        print("\nShare:")
+        print()
+        print("Share:")
         print("Ticker:", self.ticker)
         print("Lots:", self.lots)
         print("Profit:", self.profit)
@@ -86,79 +87,21 @@ class Share:
     def returnDF(self):
         return [self.ticker, self.lots, self.profit, self.stop, self.buy]
 
-def set_limit(figi_, share, limit_status):
-    global ACC_ID
-
-    price_profit = Quotation(units=int(share.profit), nano=(int(share.profit*1e9 - int(share.profit)*1e9)))
-    price_stop = Quotation(units=int(share.stop), nano=(int(share.stop*1e9 - int(share.stop)*1e9)))
-
-    if limit_status:
-        share.limit_profit_id = str(datetime.utcnow().timestamp())
-    else:
-        share.limit_stop_id = str(datetime.utcnow().timestamp())
-
-    with Client(TOKEN) as client:
-        client.orders.post_order(
-            order_id=share.limit_profit_id if limit_status else share.limit_stop_id,
-            figi=figi_,
-            price=price_profit if limit_status else price_stop,
-            quantity=share.lots,
-            account_id=ACC_ID,
-            direction=OrderDirection.ORDER_DIRECTION_BUY if limit_status else OrderDirection.ORDER_DIRECTION_SELL,
-            order_type=OrderType.ORDER_TYPE_LIMIT)
-
-def limit_stop():
-    global SHARE_INFO_DF
-    global ACC_ID
-    global ORDERS
-
-    #if (datetime.now())
-
-    with Client(TOKEN) as client:
-        while True:
-            for share in SHARES:
-                if ORDERS[ORDERS['order_id'] == share.limit_stop_id].shape[0] == 0:
-                    figi_ = SHARE_INFO_DF[SHARE_INFO_DF['ticker'] == share.ticker]['figi'].iloc[0]
-
-                    book = client.market_data.get_order_book(figi=figi_, depth=50)
-                    limit_down = book.limit_down.units + book.limit_down.nano / 1e9
-
-                    if share.stop > limit_down:
-                        set_limit(figi_, share, 0)
-            sleep(30)
-
-def limit_profit():
-    global SHARE_INFO_DF
-    global ACC_ID
-    global ORDERS
-    with Client(TOKEN) as client:
-        while True:
-            for share in SHARES:
-                if ORDERS[ORDERS['order_id'] == share.limit_profit_id].shape[0] == 0:
-                    figi_ = SHARE_INFO_DF[SHARE_INFO_DF['ticker'] == share.ticker]['figi'].iloc[0]
-
-                    book = client.market_data.get_order_book(figi=figi_, depth=50)
-                    limit_up = book.limit_up.units + book.limit_up.nano / 1e9
-
-                    if share.profit < limit_up:
-                        set_limit(figi_, share, 1)
-            sleep(30)
-
 def buy_share(figi_, lots_):
     global ACC_ID
 
-    with Client(TOKEN) as client:
-        order_info = client.orders.post_order(
-            order_id=str(datetime.utcnow().timestamp()),
-            figi=figi_,
-            quantity=lots_,
-            account_id=ACC_ID,
-            direction=OrderDirection.ORDER_DIRECTION_BUY,
-            order_type=OrderType.ORDER_TYPE_MARKET)
-        sleep(5)
-        if order_info.execution_report_status == 'EXECUTION_REPORT_STATUS_REJECTED':
-            return False
-        return True
+    try:
+        with Client(TOKEN) as client:
+            order_info = client.orders.post_order(
+                order_id=str(datetime.utcnow().timestamp()),
+                figi=figi_,
+                quantity=lots_,
+                account_id=ACC_ID,
+                direction=OrderDirection.ORDER_DIRECTION_BUY,
+                order_type=OrderType.ORDER_TYPE_MARKET)
+            return True
+    except:
+        return False
 
 def sell_share(ticker_, lots_):
     global ACC_ID
@@ -170,18 +113,21 @@ def sell_share(ticker_, lots_):
         if share.ticker == ticker_:
             share.stop = share.buy
 
-    with Client(TOKEN) as client:
-        DF = DataFrame(client.instruments.shares(instrument_status=InstrumentStatus.INSTRUMENT_STATUS_BASE).instruments,
-                       columns=['figi', 'ticker'])
-        figi_ = DF[DF['ticker'] == ticker_]['figi'].iloc[0]
+    try:
+        with Client(TOKEN) as client:
+            DF = DataFrame(client.instruments.shares(instrument_status=InstrumentStatus.INSTRUMENT_STATUS_BASE).instruments,
+                           columns=['figi', 'ticker'])
+            figi_ = DF[DF['ticker'] == ticker_]['figi'].iloc[0]
 
-        order_info = client.orders.post_order(
-            order_id=str(datetime.utcnow().timestamp()),
-            figi=figi_,
-            quantity=lots_,
-            account_id=ACC_ID,
-            direction=OrderDirection.ORDER_DIRECTION_SELL,
-            order_type=OrderType.ORDER_TYPE_MARKET)
+            order_info = client.orders.post_order(
+                order_id=str(datetime.utcnow().timestamp()),
+                figi=figi_,
+                quantity=lots_,
+                account_id=ACC_ID,
+                direction=OrderDirection.ORDER_DIRECTION_SELL,
+                order_type=OrderType.ORDER_TYPE_MARKET)
+            return True
+    except:
         return False
 
 def tinkoff_buy(shareBuyInfo):
@@ -196,46 +142,73 @@ def tinkoff_buy(shareBuyInfo):
     lot = 0
     buy = 0
 
-    with Client(TOKEN) as client:
-        figi = SHARE_INFO_DF[SHARE_INFO_DF['ticker'] == ticker]['figi'].iloc[0]
-        lot = SHARE_INFO_DF[SHARE_INFO_DF['ticker'] == ticker]['lot'].iloc[0]
-        book = client.market_data.get_order_book(figi=figi, depth=1)
-        bid = book.bids[0].price.units + book.bids[0].price.nano / 1e9
-        ask = book.asks[0].price.units + book.asks[0].price.nano / 1e9
-        buy = (bid + ask) / 2
+    try:
+        with Client(TOKEN) as client:
+            figi = SHARE_INFO_DF[SHARE_INFO_DF['ticker'] == ticker]['figi'].iloc[0]
+            lot = SHARE_INFO_DF[SHARE_INFO_DF['ticker'] == ticker]['lot'].iloc[0]
+            book = client.market_data.get_order_book(figi=figi, depth=1)
+            bid = book.bids[0].price.units + book.bids[0].price.nano / 1e9
+            ask = book.asks[0].price.units + book.asks[0].price.nano / 1e9
+            buy = (bid + ask) / 2
+    except:
+        print("Error while uploading cup")
+        return False
 
+    print("Ticker =", ticker, "buy =", buy, "stop =", stop, "profit =", profit)
     if Lside < buy and buy < Rside:
         lots = ceil(BALANCE * LOT_PROPORTION / (buy*lot))
         if BALANCE_FREE < buy*lots:
             lots = floor(BALANCE_FREE / buy*lot)
+            print("Not enough FREE_BALANCE for full lots")
         if lots >= 1:
-            isBuying = buy_share(figi, lots)
-            if isBuying:
-                shareWas = False
-                for share in SHARES:
-                    if share.ticker == ticker:
-                        share.lots += lots
-                        share.profit = profit
-                        share.stop = stop
-                        share.buy = buy
-                        shareWas = True
-                        break
-                if not shareWas:
-                    sh = Share(ticker, lots, profit, stop, buy)
-                    SHARES.append(sh)
-                return True
+            try:
+                isBuying = buy_share(figi, lots)
+            except:
+                print("Error while buying share")
+                return False
+            else:
+                if isBuying:
+                    print("Share was bought")
+                    shareWas = False
+                    for share in SHARES:
+                        if share.ticker == ticker:
+                            share.lots += lots
+                            share.profit = profit
+                            share.stop = stop
+                            share.buy = buy
+                            shareWas = True
+                            break
+                    if not shareWas:
+                        print("Adding to SHARES")
+                        sh = Share(ticker, lots, profit, stop, buy)
+                        SHARES.append(sh)
+                    return True
+                else:
+                    print("Share wasn't bought")
+        else:
+            print("Not enough FREE_BALANCE for one lot")
+    else:
+        print("Buy is out of bounds")
     return False
 
 def tinkoff_sell(shareSellInfo, sell_status):
     global SHARES
     ticker = str(shareSellInfo[1::])
 
+    have = False
     for i in range(len(SHARES)):
         if SHARES[i].ticker == ticker:
-            isAlive = SHARES[i].selling(sell_status)
+            have = True
+            try:
+                isAlive = SHARES[i].selling(sell_status)
+            except:
+                print("Error while selling")
+                return
 
             if not isAlive:
                 SHARES.pop(i)
+    if not have:
+        print(shareSellInfo, "not on account")
 
 def define_buy(msgList):
     ticker = ""
@@ -308,7 +281,7 @@ def defineMsg(msg):
                 return True
         return False
 
-    elif (recieved[0].lower() == "фиксирую"):
+    elif (recieved[0].lower() == "фиксирую" or recieved[0].lower() == "фиксируюпо"):
         request_sell = define_sell(recieved)
         print("Фиксирую", request_sell)
         if request_sell != "":
@@ -348,91 +321,64 @@ def get_BALANCE():
 
 def format_message(message):
     result_message = ""
-    for i in message:
-        if (i.isalpha() or i.isdigit() or i in " +%$,.\n#:"):
-            result_message += i
+    try:
+        for i in message:
+            if (i.isalpha() or i.isdigit() or i in " +%$,.\n#:"):
+                result_message += i
+    except:
+        print("Error while clearing text")
+        result_message = ""
     return result_message
 
 @app.on_message(filters.chat(SOURCE_PUBLICS))
 def new_channel_post(tgclient, message):
+
+    print("===Message was recieved===")
+    print("Current Time =", datetime.now().strftime("%H:%M:%S"))
+
     get_BALANCE()
     tgMessage = format_message(message.text)
-    defineMsg(tgMessage)
+    if tgMessage != "":
+        print("Message cleared")
+        defineMsg(tgMessage)
+    else:
+        print("Empty message")
 
     global SHARES
-    sharesDF = DataFrame([share.returnDF() for share in SHARES], columns=["ticker", "lots", "profit", "stop", "buy"])
-    print(sharesDF)
-    print()
+    try:
+        sharesDF = DataFrame([share.returnDF() for share in SHARES], columns=["ticker", "lots", "profit", "stop", "buy"])
+        print(sharesDF)
+    except:
+        print("Error while printing SHARES")
+    print("===Message proccessing was completed")
 
 def load_SHARE_INFO_DF():
     global SHARE_INFO_DF
     with Client(TOKEN) as client:
+
+        SHARE_INFO_DF = DataFrame(client.instruments.shares(instrument_status=InstrumentStatus.INSTRUMENT_STATUS_BASE).instruments,
+                                  columns=['figi', 'ticker', 'lot'])
+        sleep(60)
+
         while True:
-            SHARE_INFO_DF = DataFrame(client.instruments.shares(instrument_status=InstrumentStatus.INSTRUMENT_STATUS_BASE).instruments,
-                                      columns=['figi', 'ticker', 'lot'])
-            sleep(10)
+            time = datetime.now()
+            if time.minute == 0:
+                print("===Update SHARE_INFO_DF===")
+                print("Current Time =", datetime.now().strftime("%H:%M:%S"))
 
-def load_ORDERS():
-    global ORDERS
-    global ACC_ID
-    with Client(TOKEN) as client:
-        ORDERS = DataFrame(client.orders.get_orders(account_id=ACC_ID).orders, columns=['order_id', 'execution_report_status'])
-        sleep(10)
-
-def load_SHARES():
-    global SHARES
-    global ACC_ID
-    global SHARE_INFO_DF
-    with Client(TOKEN) as client:
-        DF = DataFrame(client.operations.get_positions(account_id=ACC_ID).securities,
-                       columns=['figi', 'balance'])
-        for i in range(len(DF)):
-            ticker = SHARE_INFO_DF[SHARE_INFO_DF['figi'] == DF['figi'].iloc[i]]['ticker'].iloc[0]
-
-            book = client.market_data.get_order_book(figi=DF['figi'].iloc[0], depth=1)
-            if len(book.bids) == 0 or len(book.asks) == 0:
-                continue
-            bid = book.bids[0].price.units + book.bids[0].price.nano / 1e9
-            ask = book.asks[0].price.units + book.asks[0].price.nano / 1e9
-            buy = (bid + ask) / 2
-
-            lots = DF['balance'].iloc[i]
-
-            profit = int((buy*1.1) * 100)//100
-            stop = int((buy*0.95) * 100)//100
-
-            sh = Share(ticker, lots, profit, stop, buy)
-            SHARES.append(sh)
-
-def update_SHARES():
-    global SHARES
-    global ACC_ID
-    global SHARE_INFO_DF
-    with Client(TOKEN) as client:
-        while True:
-            DF = DataFrame(client.operations.get_positions(account_id=ACC_ID).securities,
-                           columns=['figi', 'balance'])
-
-            indexes = []
-            isAslive = False
-            for i in range(len(SHARES)):
-                isAslive = False
-                for j in range(len(DF)):
-                    figi = SHARE_INFO_DF[SHARE_INFO_DF['figi'] == DF['figi'].iloc[j]]['figi'].iloc[0]
-                    ticker = SHARE_INFO_DF[SHARE_INFO_DF['figi'] == figi]['ticker'].iloc[0]
-
-                    if SHARES[i].ticker == ticker:
-                        isAslive = True
-                if not isAslive:
-                    indexes.append(i)
-
-            for i in range(len(indexes)-1, 0, -1):
-                SHARES.pop(indexes[i])
-            sleep(60)
+                try:
+                    SHARE_INFO_DF = DataFrame(client.instruments.shares(instrument_status=InstrumentStatus.INSTRUMENT_STATUS_BASE).instruments,
+                                              columns=['figi', 'ticker', 'lot'])
+                    print("SHARE_INFO_DF was updated")
+                except:
+                    print("Error while updating SHARE_INFO_DF")
+                sleep(60)
 
 def init():
     global ACC_ID
     global SHARES
+
+    print("===Start init()===")
 
     with Client(TOKEN) as client:
         acc = client.users.get_accounts().accounts
@@ -444,36 +390,20 @@ def init():
     sleep(5)
     print("SHARE_INFO_DF was upload")
 
-    #update_shares = Thread(target=update_SHARES)
-    #update_shares.start()
-    #print("Updating shares is enable")
-
-    #load_SHARES()
-    #sleep(1)
-    #print("SHARES was upload")
-
-    #orders = Thread(target=load_ORDERS)
-    #orders.start()
-    #sleep(1)
-    #print("ORDERS was upload")
-
-    #limit_down = Thread(target=limit_stop)
-    #limit_up = Thread(target=limit_profit)
-    #limit_down.start()
-    #limit_up.start()
-    #print("Limits are active")
-
     get_BALANCE()
     print("BALANCE =", BALANCE)
     print("BALANCE_FREE =", BALANCE_FREE)
-    sharesDF = DataFrame([share.returnDF() for share in SHARES], columns=["ticker", "lots", "profit", "stop", "buy"])
-    print(sharesDF)
-    print()
+
+    try:
+        sharesDF = DataFrame([share.returnDF() for share in SHARES], columns=["ticker", "lots", "profit", "stop", "buy"])
+        print(sharesDF)
+    except:
+        print("Error while ptinting SHARES")
+
+    print("===End init()===\n")
 
 if __name__ == '__main__':
-    print('Bot was started!')
-
-    #print(datetime.now().minute)
+    print('Bot was started!\n')
 
     init()
     app.run()
